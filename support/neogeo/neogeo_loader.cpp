@@ -10,6 +10,7 @@
 #include "../../user_io.h"
 #include "../../fpga_io.h"
 #include "../../osd.h"
+#include "../../cfg.h"
 #include "../../menu.h"
 #include "../../shmem.h"
 

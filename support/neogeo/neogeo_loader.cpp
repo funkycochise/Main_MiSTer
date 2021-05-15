@@ -132,7 +132,7 @@ static uint32_t neogeo_file_tx(const char* path, const char* name, uint8_t neo_f
 	// prepare transmission of new file
 	user_io_set_download(1);
 
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 	while (bytes2send)
 	{
 		uint16_t chunk = (bytes2send > sizeof(buf)) ? sizeof(buf) : bytes2send;
@@ -164,12 +164,12 @@ static uint32_t neogeo_file_tx(const char* path, const char* name, uint8_t neo_f
 
 		DisableFpga();
 
-		ProgressMessage("Loading", name, size - bytes2send, size);
+		if (cfg.progress_info) ProgressMessage("Loading", name, size - bytes2send, size);
 		bytes2send -= chunk;
 	}
 
 	FileClose(&f);
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 
 	// signal end of transmission
 	user_io_set_download(0);
@@ -214,7 +214,7 @@ static uint32_t load_crom_to_mem(const char* path, const char* name, uint8_t ind
 	uint32_t remain = size;
 	uint32_t map_addr = 0x38000000 + (((index - 64) >> 1) * 1024 * 1024);
 
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 	while (remain)
 	{
 		uint32_t partsz = remain;
@@ -231,7 +231,7 @@ static uint32_t load_crom_to_mem(const char* path, const char* name, uint8_t ind
 		FileReadAdv(&f, loadbuf, partsz/2);
 		spr_convert_skp((uint16_t*)loadbuf, ((uint16_t*)base) + ((index ^ 1) & 1), partsz / 4);
 
-		ProgressMessage("Loading", name, size - (remain - partsz), size);
+		if (cfg.progress_info) ProgressMessage("Loading", name, size - (remain - partsz), size);
 
 		shmem_unmap(base, partsz);
 		remain -= partsz;
@@ -239,7 +239,7 @@ static uint32_t load_crom_to_mem(const char* path, const char* name, uint8_t ind
 	}
 
 	FileClose(&f);
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 
 	return map_addr - 0x38000000;
 }
@@ -273,7 +273,7 @@ static uint32_t load_rom_to_mem(const char* path, const char* name, uint8_t neo_
 
 	uint32_t map_addr = 0x30000000 + (addr ? addr : ((index >= 16) && (index < 64)) ? (index - 16) * 0x80000 : (index == 9) ? 0x2000000 : 0x8000000);
 
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 	while (remain)
 	{
 		uint32_t partsz = remain;
@@ -309,7 +309,7 @@ static uint32_t load_rom_to_mem(const char* path, const char* name, uint8_t neo_
 			if (partszf) FileReadAdv(&f, base, partszf);
 		}
 
-		ProgressMessage("Loading", name, size - (remain - partsz), size);
+		if (cfg.progress_info) ProgressMessage("Loading", name, size - (remain - partsz), size);
 
 		shmem_unmap(base, partsz);
 		remain -= partsz;
@@ -317,7 +317,7 @@ static uint32_t load_rom_to_mem(const char* path, const char* name, uint8_t neo_
 	}
 
 	FileClose(&f);
-	ProgressMessage();
+	if (cfg.progress_info) ProgressMessage();
 
 	return size;
 }

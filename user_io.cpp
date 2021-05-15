@@ -345,13 +345,13 @@ static void set_emu_mode(int mode)
 	case EMU_JOY0:
 		emu_led = 0x20;
 		set_kbd_led(HID_LED_NUM_LOCK | HID_LED_SCROLL_LOCK, HID_LED_NUM_LOCK);
-		Info("Kbd mode: Joystick 1", 1000);
+		if (cfg.controller_info) Info("Kbd mode: Joystick 1", 1000);
 		break;
 
 	case EMU_JOY1:
 		emu_led = 0x40;
 		set_kbd_led(HID_LED_NUM_LOCK | HID_LED_SCROLL_LOCK, HID_LED_SCROLL_LOCK);
-		Info("Kbd mode: Joystick 2", 1000);
+		if (cfg.controller_info) Info("Kbd mode: Joystick 2", 1000);
 		break;
 
 	case EMU_MOUSE:

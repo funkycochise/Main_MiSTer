@@ -81,6 +81,8 @@ enum MENU
 	MENU_CORE_FILE_CANCELED,
 	MENU_RECENT1,
 	MENU_RECENT2,
+	MENU_RECENT3,
+	MENU_RECENT4,
 	MENU_ABOUT1,
 	MENU_ABOUT2,
 	MENU_RESET1,
@@ -288,7 +290,7 @@ static char SelectedDir[1024] = {};
 static char SelectedLabel[1024] = {};
 
 static char Selected_F[16][1024] = {};
-static char Selected_S[8][1024] = {};
+static char Selected_S[16][1024] = {};
 static char Selected_tmp[1024] = {};
 
 void StoreIdx_F(int idx, char *path)
@@ -1218,12 +1220,12 @@ void HandleUI(void)
 		}
 		else if (helpstate == 9)
 		{
-			ScrollReset();
+			ScrollReset(1);
 			++helpstate;
 		}
 		else
 		{
-			ScrollText(OsdGetSize() - 1, helptexts[helptext_idx], 0, 0, 0, 0);
+			ScrollText(OsdGetSize() - 1, helptexts[helptext_idx], 0, 0, 0, 0, 1);
 		}
 	}
 
@@ -1593,6 +1595,7 @@ void HandleUI(void)
 					}
 					else if (!strcmp(p, "DIP"))
 					{
+						h = page;
 						if (!h && arcade_sw(0)->dip_num)
 						{
 							dip_submenu = selentry;
@@ -1940,13 +1943,15 @@ void HandleUI(void)
 				while (1)
 				{
 					p = user_io_get_confstr(i++);
-					if (!p) continue;
+					if (!p) break;
 
 					h = 0;
 					d = 0;
 					inpage = !page;
 
-					if (strcmp(p, "DIP") && strcmp(p, "CHEAT") && strncmp(p, "DEFMRA,", 7))
+					if (!strcmp(p, "DIP")) h = page || !arcade_sw(0)->dip_num;
+					else if (!strcmp(p, "CHEAT")) h = page || !arcade_sw(1)->dip_num;
+					else if (strncmp(p, "DEFMRA,", 7))
 					{
 						//Hide or Disable flag
 						while ((p[0] == 'H' || p[0] == 'D' || p[0] == 'h' || p[0] == 'd') && strlen(p) > 2)
@@ -1959,9 +1964,6 @@ void HandleUI(void)
 							p += 2;
 						}
 					}
-
-					if (!strcmp(p, "DIP") && (!arcade_sw(0)->dip_num || inpage)) continue;
-					if (!strcmp(p, "CHEAT") && (!arcade_sw(1)->dip_num || inpage)) continue;
 
 					if (p[0] == 'P')
 					{
@@ -2036,7 +2038,7 @@ void HandleUI(void)
 					else if (p[0] == 'S' && (select || recent))
 					{
 						ioctl_index = 0;
-						if ((p[1] >= '0' && p[1] <= '3') || is_x86()) ioctl_index = p[1] - '0';
+						if ((p[1] >= '0' && p[1] <= '9') || is_x86()) ioctl_index = p[1] - '0';
 						substrcpy(ext, p, 1);
 						while (strlen(ext) % 3) strcat(ext, " ");
 
@@ -2666,7 +2668,7 @@ void HandleUI(void)
 
 			for (; entry < OsdGetSize() - 1; entry++) MenuWrite(entry, "", 0, 0);
 
-			MenuWrite(entry, dipv ? "            save" : "       Reset to apply", menusub == selentry);
+			MenuWrite(entry, dipv ? STD_BACK : "       Reset to apply", menusub == selentry);
 			menusub_last = selentry;
 			menumask = (menumask << 1) | 1;
 
@@ -2687,13 +2689,18 @@ void HandleUI(void)
 		{
 			if (menusub == menusub_last)
 			{
-				arcade_sw_save(dipv);
 				if (!dipv)
 				{
+					arcade_sw_save(dipv);
 					user_io_8bit_set_status(UIO_STATUS_RESET, UIO_STATUS_RESET);
 					user_io_8bit_set_status(0, UIO_STATUS_RESET);
+					menustate = MENU_NONE1;
 				}
-				menustate = MENU_NONE1;
+				else
+				{
+					menusub = dip2_submenu;
+					menustate = MENU_GENERIC_MAIN1;
+				}
 			}
 			else
 			{
@@ -4650,13 +4657,9 @@ void HandleUI(void)
 
 		if (c == KEY_BACKSPACE)
 		{
-			for (int i = 0; i < OsdGetSize(); i++) OsdWrite(i, "", 0, 0);
-			OsdWrite(OsdGetSize() / 2, "    Clearing the recents", 0, 0);
-			OsdUpdate();
-			sleep(1);
-			recent_clear((fs_Options & SCANO_CORES) ? -1 : (fs_Options & SCANO_UMOUNT) ? ioctl_index + 500 : ioctl_index);
-			menustate = fs_MenuCancel;
-			if (is_menu()) menustate = MENU_FILE_SELECT1;
+			menusub_last = menusub;
+			menusub = 0;
+			menustate = MENU_RECENT3;
 			break;
 		}
 
@@ -4675,6 +4678,45 @@ void HandleUI(void)
 		if (select)
 		{
 			menustate = recent_select(SelectedDir, selPath, SelectedLabel) ? (enum MENU)fs_MenuSelect : MENU_RECENT1;
+		}
+		break;
+
+	case MENU_RECENT3:
+		menumask = 0x03;
+		parentstate = menustate;
+		m = 0;
+		OsdWrite(m++);
+		OsdWrite(m++);
+		OsdWrite(m++);
+		OsdWrite(m++);
+		OsdWrite(m++);
+		OsdWrite(m++);
+		OsdWrite(m++, "        Clear the List?");
+		OsdWrite(m++);
+		OsdWrite(m++, "             No", menusub == 0);
+		OsdWrite(m++, "             Yes", menusub == 1);
+		while(m < OsdGetSize()) OsdWrite(m++);
+		menustate = MENU_RECENT4;
+		break;
+
+	case MENU_RECENT4:
+		if (select && menusub == 1)
+		{
+			for (int i = 0; i < OsdGetSize(); i++) OsdWrite(i, "", 0, 0);
+			OsdWrite(OsdGetSize() / 2, "    Clearing the recents", 0, 0);
+			OsdUpdate();
+			sleep(1);
+			recent_clear((fs_Options & SCANO_CORES) ? -1 : (fs_Options & SCANO_UMOUNT) ? ioctl_index + 500 : ioctl_index);
+			menustate = fs_MenuCancel;
+			menusub = menusub_last;
+			if (is_menu()) menustate = MENU_FILE_SELECT1;
+
+		}
+		else if (select || menu || back)
+		{
+			menustate = fs_MenuCancel;
+			menusub = menusub_last;
+			if (is_menu()) menustate = MENU_FILE_SELECT1;
 		}
 		break;
 

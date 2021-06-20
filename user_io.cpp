@@ -1508,11 +1508,17 @@ int user_io_file_mount(const char *name, unsigned char index, char pre)
 			{
 				writable = 0;
 				ret = c64_openT64(name, sd_image + index);
+				if (ret) ret = c64_openGCR(name, sd_image + index, index);
 			}
 			else
 			{
 				writable = FileCanWrite(name);
 				ret = FileOpenEx(&sd_image[index], name, writable ? (O_RDWR | O_SYNC) : O_RDONLY);
+				if (ret && is_c64() && len > 4 && (!strcasecmp(name + len - 4, ".d64") || !strcasecmp(name + len - 4, ".g64")))
+				{
+					ret = c64_openGCR(name, sd_image + index, index);
+					if(!ret) FileClose(&sd_image[index]);
+				}
 			}
 		}
 
@@ -1524,6 +1530,7 @@ int user_io_file_mount(const char *name, unsigned char index, char pre)
 	else
 	{
 		FileClose(&sd_image[index]);
+		c64_closeGCR(index);
 	}
 
 	buffer_lba[index] = -1;
@@ -2200,10 +2207,18 @@ int user_io_file_tx(const char* name, unsigned char index, char opensave, char m
 		uint8_t *mem = (uint8_t *)shmem_map(fpga_mem(load_addr), bytes2send);
 		if (mem)
 		{
-			FileReadAdv(&f, mem, bytes2send);
-			if (is_snes() && is_snes_bs) snes_patch_bs_header(&f, mem);
-			file_crc = crc32(file_crc, mem + skip, bytes2send - skip);
-			skip = 0;
+			while (bytes2send)
+			{
+				uint32_t chunk = (bytes2send > (256 * 1024)) ? (256 * 1024) : bytes2send;
+				FileReadAdv(&f, mem + size - bytes2send, chunk);
+
+				file_crc = crc32(file_crc, mem + skip + size - bytes2send, chunk - skip);
+				skip = 0;
+
+				if (use_progress) ProgressMessage("Loading", f.name, size - bytes2send, size);
+				bytes2send -= chunk;
+			}
+
 			shmem_unmap(mem, bytes2send);
 		}
 	}
@@ -2662,7 +2677,13 @@ void user_io_poll()
 			}
 			DisableIO();
 
-			if (op == 2)
+			if ((blksz == 32) && is_c64())
+			{
+				if (op == 2) c64_writeGCR(disk, lba);
+				else if (op & 1) c64_readGCR(disk, lba);
+				else break;
+			}
+			else if (op == 2)
 			{
 				//printf("SD WR %d on %d\n", lba, disk);
 

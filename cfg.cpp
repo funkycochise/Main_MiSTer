@@ -593,8 +593,8 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
-        disable_autofire=1;
-        show_progress_info=0;
+        cfg.disable_autofire=1;
+        cfg.show_progress_info=0;
 	ini_parse(altcfg(), video_get_core_mode_name(1));
 	if (has_video_sections && !using_video_section)
 	{

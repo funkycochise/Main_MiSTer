@@ -132,6 +132,7 @@ static const ini_var_t ini_vars[] =
 	{ "DEBUG", (void *)(&(cfg.debug)), UINT8, 0, 1 },
 	{ "MAIN", (void*)(&(cfg.main)), STRING, 0, sizeof(cfg.main) - 1 },
 	{"VFILTER_INTERLACE_DEFAULT", (void*)(&(cfg.vfilter_interlace_default)), STRING, 0, sizeof(cfg.vfilter_interlace_default) - 1 },
+	{ "SHOW_PROGRESS_INFO", (void *)(&(cfg.show_progress_info)), UINT8, 0, 1 },
 };
 
 static const int nvars = (int)(sizeof(ini_vars) / sizeof(ini_var_t));
@@ -592,6 +593,8 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
+        disable_autofire=1;
+        show_progress_info=0;
 	ini_parse(altcfg(), video_get_core_mode_name(1));
 	if (has_video_sections && !using_video_section)
 	{

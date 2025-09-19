@@ -2432,10 +2432,6 @@ void HandleUI(void)
 						if (!n64_rom_tx(selPath, idx, load_addr, n64_crc)) Info("failed to load ROM");
 						else if (user_io_use_cheats() && !store_name) cheats_init(selPath, n64_crc);
 					}
-					else if (is_c64() || is_c128())
-					{
-						c64_open_file(selPath, idx);
-					}
 					else
 					{
 						user_io_file_tx(selPath, idx, opensave, 0, 0, load_addr);
@@ -3102,7 +3098,7 @@ void HandleUI(void)
 				exit(1); //should never be reached
 			}
 		} else {
-			menustate = MENU_DOC_NO_FBTERM;
+			menustate = MENU_DOC_NO_FBTERM; 
 		}
 
 		break;
@@ -3150,7 +3146,7 @@ void HandleUI(void)
 		break;
 
 		case MENU_DOC_NO_FBTERM2:
-			if (select)
+			if (select) 
 			{
 				menustate = MENU_NONE1;
 				menusub = 3;
@@ -6976,9 +6972,9 @@ void HandleUI(void)
 			{
 				if (btimeout > 0)
 				{
-					OsdWrite(12, "\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81");
+					if (cfg.show_progress_info) OsdWrite(12, "\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81\x81");
 					snprintf(str, sizeof(str), " Bootcore -> %s", bootcoretype);
-					OsdWrite(13, str, 0, 0);
+					if (cfg.show_progress_info) OsdWrite(13, str, 0, 0);
 					strcpy(straux, cfg.bootcore);
 					sprintf(str, " %s", get_rbf_name_bootcore(straux));
 
@@ -6994,17 +6990,17 @@ void HandleUI(void)
 					}
 
 					strncpy(s + 1, str, len); // display only name
-					OsdWrite(14, s, 1, 0, 0, (32 * btimeout) / cfg.bootcore_timeout);
+					if (cfg.show_progress_info) OsdWrite(14, s, 1, 0, 0, (32 * btimeout) / cfg.bootcore_timeout);
 
 					sprintf(str, "   Press any key to cancel");
-					OsdWrite(15, str, 0, 0);
+					if (cfg.show_progress_info) OsdWrite(15, str, 0, 0);
 					btimeout--;
 					if (!btimeout)
 					{
-						OsdWrite(13, "", 0, 0);
-						OsdWrite(14, s, 1, 0, 0, 0);
+						if (cfg.show_progress_info) OsdWrite(13, "", 0, 0);
+						if (cfg.show_progress_info) OsdWrite(14, s, 1, 0, 0, 0);
 						sprintf(str, "           Loading...");
-						OsdWrite(15, str, 1, 0);
+						if (cfg.show_progress_info) OsdWrite(15, str, 1, 0);
 						isXmlName(cfg.bootcore) ? xml_load(getFullPath(cfg.bootcore)) : fpga_load_rbf(cfg.bootcore);
 					}
 				}
@@ -7052,9 +7048,9 @@ void HandleUI(void)
 				str[22] = ' ';
 			}
 
-			OsdWrite(16, "", 1, 0);
-			OsdWrite(17, str, 1, 0);
-			OsdWrite(18, "", 1, 0);
+			if (cfg.show_progress_info) OsdWrite(16, "", 1, 0);
+			if (cfg.show_progress_info) OsdWrite(17, str, 1, 0);
+			if (cfg.show_progress_info) OsdWrite(18, "", 1, 0);
 		}
 	}
 }

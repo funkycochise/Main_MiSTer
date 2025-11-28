@@ -28,7 +28,6 @@
 #include "offload.h"
 
 #include "support.h"
-#include "support/arcade/mra_loader.h"
 #include "lib/imlib2/Imlib2.h"
 #include "lib/md5/md5.h"
 
@@ -76,6 +75,9 @@ static int menu_bg = 0;
 static int menu_bgn = 0;
 
 static VideoInfo current_video_info;
+
+// expose video timings for autofire
+VideoInfo *pcurrent_video_info = &current_video_info;
 
 static int support_FHD = 0;
 
@@ -2961,62 +2963,36 @@ static void spd_config_update()
 {
 	if (use_freesync_spd) return;
 
-	if (cfg.direct_video)
+	VideoInfo *vi = &current_video_info;
+	if (!vi->width) return;
+
+	uint8_t data[31] =
 	{
-		// Custom SPD IF for additional DV1 metadata
-		VideoInfo *vi = &current_video_info;
-		if (!vi->width) return;
+		0x83, 0x01, 25, 0,
+		cfg.direct_video ? 'D' : 'V',
+		cfg.direct_video ? 'V' : 'I',
+		cfg.direct_video ? '1' : '1', // version
+		(uint8_t)((vi->interlaced ? 1 : 0) | (menu_present() ? 4 : 0) | (vi->rotated ? 8 : 0)),
+		(uint8_t)(vi->pixrep ? vi->pixrep : (vi->ctime / vi->width)),
+		(uint8_t)vi->de_h,
+		(uint8_t)(vi->de_h >> 8),
+		(uint8_t)vi->de_v,
+		(uint8_t)(vi->de_v >> 8),
+		(uint8_t)vi->width,
+		(uint8_t)(vi->width >> 8),
+		(uint8_t)vi->height,
+		(uint8_t)(vi->height >> 8)
+	};
 
-		uint8_t data[31] = {
-			0x83, 0x01, 25, 0,
-			'D',
-			'V',
-			'1', // version
-			(uint8_t)((vi->interlaced ? 1 : 0) | (menu_present() ? 4 : 0) | (vi->rotated ? 8 : 0) | (arcade_get_direction() << 4)),
-			(uint8_t)(vi->pixrep ? vi->pixrep : (vi->ctime / vi->width)),
-			(uint8_t)vi->de_h,
-			(uint8_t)(vi->de_h >> 8),
-			(uint8_t)vi->de_v,
-			(uint8_t)(vi->de_v >> 8),
-			(uint8_t)vi->width,
-			(uint8_t)(vi->width >> 8),
-			(uint8_t)vi->height,
-			(uint8_t)(vi->height >> 8)
-		};
-
-		char *name = user_io_get_core_name2();
-		for (int i = 17; i < 31; i++)
-		{
-			if (!*name) break;
-			data[i] = (uint8_t)(*name);
-			name++;
-		}
-
-		hdmi_spd_config(data);
-	}
-	else
+	char *name = user_io_get_core_name2();
+	for (int i = 17; i < 31; i++)
 	{
-		// Standard SPD IF
-		uint8_t data[31] = {
-			0x83, 0x01, 25,                        // SPD IF header + length
-			0,                                    // Checksum, automatically calculated by ADV7513 if zero
-			'M', 'i', 'S', 'T', 'e', 'r', 0, 0, // Vendor Name (up to 8 characters)
-		};
-
-		// Product Description (up to 16 characters)
-		char *name = user_io_get_core_name2();
-		for (int i = 12; i < 28; i++)
-		{
-			if (!*name) break;
-			data[i] = (uint8_t)(*name);
-			name++;
-		}
-
-		// Source Information (see ANSI/CTA-861-I, Table 35 - Source Product Description InfoFrame Data Byte 25)
-		data[28] = 0x08; // Type: Game
-
-		hdmi_spd_config(data);
+		if (!*name) break;
+		data[i] = (uint8_t)(*name);
+		name++;
 	}
+
+	hdmi_spd_config(data);
 }
 
 void video_mode_adjust()

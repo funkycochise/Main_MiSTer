@@ -389,13 +389,8 @@ void user_io_read_core_name()
 	is_gba_type = 0;
 	is_c64_type = 0;
 	is_c128_type = 0;
-	is_psx_type = 0;
-	is_cdi_type = 0;
 	is_st_type = 0;
 	is_pcxt_type = 0;
-	is_electron_type = 0;
-	is_saturn_type = 0;
-	is_n64_type = 0;
 	is_uneon_type = 0;
 	core_name[0] = 0;
 
@@ -1718,23 +1713,19 @@ void user_io_r_analog_joystick(unsigned char joystick, char valueX, char valueY)
 	}
 }
 
-void user_io_digital_joystick(unsigned char joystick, uint64_t map, int newdir)
+void user_io_digital_joystick(unsigned char joystick, uint32_t map, int newdir)
 {
 	uint8_t joy = (joystick>1 || !joyswap) ? joystick : joystick ^ 1;
 	static int use32 = 0;
-	// primary button mappings are in 31:0, alternate mappings are in 64:32.
-	// take the logical OR to ensure a held button isn't overriden
-	// by other mapping being pressed
-	uint32_t bitmask = (uint32_t)(map) | (uint32_t)(map >> 32);
-	use32 |= bitmask >> 16;
+	use32 |= map >> 16;
 	spi_uio_cmd_cont((joy < 2) ? (UIO_JOYSTICK0 + joy) : (UIO_JOYSTICK2 + joy - 2));
-	spi_w(bitmask);
-	if(use32) spi_w(bitmask >> 16);
+	spi_w(map);
+	if(use32) spi_w(map >> 16);
 	DisableIO();
 
 	if (!is_minimig() && joy_transl == 1 && newdir)
 	{
-		user_io_l_analog_joystick(joystick, (bitmask & 2) ? 128 : (bitmask & 1) ? 127 : 0, (bitmask & 8) ? 128 : (bitmask & 4) ? 127 : 0);
+		user_io_l_analog_joystick(joystick, (map & 2) ? 128 : (map & 1) ? 127 : 0, (map & 8) ? 128 : (map & 4) ? 127 : 0);
 	}
 }
 

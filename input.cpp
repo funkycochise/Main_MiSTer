@@ -13,10 +13,10 @@
 #include <sys/stat.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <stdarg.h>
 #include <math.h>
+#include <time.h>
 
 #include "input.h"
 #include "user_io.h"
@@ -32,6 +32,7 @@
 #include "profiling.h"
 #include "gamecontroller_db.h"
 #include "str_util.h"
+#include "autofire_timer.h"
 
 #define NUMDEV 30
 #define NUMPLAYERS 6
@@ -1645,11 +1646,7 @@ static int keyrah_trans(int key, int press)
 static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int dev);
 
 static int kbd_toggle = 0;
-static uint64_t joy[NUMPLAYERS] = {};		// 0-31 primary mappings, 32-64 alternate
-static uint64_t autofire[NUMPLAYERS] = {};	// 0-31 primary mappings, 32-64 alternate
-static uint32_t autofirecodes[NUMPLAYERS][BTN_NUM] = {};
-static int af_delay[NUMPLAYERS] = {};
-
+static uint32_t joy[NUMPLAYERS] = {};
 static uint32_t crtgun_timeout[NUMDEV] = {};
 
 static unsigned char mouse_btn = 0; //emulated mouse
@@ -1668,10 +1665,6 @@ static uint32_t mouse_timer = 0;
 
 #define BTN_TGL 100
 #define BTN_OSD 101
-
-#define AF_MIN  16
-#define AF_MAX  512
-#define AF_STEP 8
 
 static int uinp_fd = -1;
 static int input_uinp_setup()
@@ -1842,11 +1835,90 @@ static void joy_apply_deadzone(int* x, int* y, const devInput* dev, const int st
 }
 
 static uint32_t osdbtn = 0;
-static void joy_digital(int jnum, uint64_t mask, uint32_t code, char press, int bnum, int dont_save = 0)
+
+static int num_af_rates = 0;
+
+// structures and functions to track autofire
+#define MAX_AF_CODES 64
+#define MAX_AF_RATES 6
+
+struct AutofireTable {
+	uint32_t mask[KEY_CNT]; 	// mask of specific code
+	int index[KEY_CNT];			// index of specific code in autofire rates table
+	int frame_count[KEY_CNT];	// current frame in mask cycle
+	int count; 					// number of entrires in autofirecodes[]
+	int autofirecodes[MAX_AF_CODES]; // codes that have autofire set (or codes that had it set, then disabled)
+};
+
+static struct AutofireTable autofiretable[NUMPLAYERS];
+
+struct Autofire {
+	int cycle_mask;
+	int cycle_length;
+	float rate_hz;
+	int bit;
+	int frame_count;
+};
+
+static struct Autofire autofire[MAX_AF_RATES];
+
+// returns index into autofire rates array
+// if a code isn't in the table at all, we return a 0
+// the index could also be reset to zero
+static int get_autofire_code_idx(int player, int code) {
+	for (int i = 0; i != autofiretable[player].count; i++)
+	{
+		if (autofiretable[player].autofirecodes[i] == code)
+			return autofiretable[player].index[code];
+	}
+	return 0;
+}
+
+// set to non-zero value to enable autofire
+// index 0 == autofire disabled.
+// index >0 == matching rate in af_ arrays.
+void set_autofire_code(int player, int code, uint32_t mask, int index)
 {
-	static char str[128];
+	bool found = false;
+	for (int i = 0; i != autofiretable[player].count; i++) {
+		if (autofiretable[player].autofirecodes[i] == code) {
+			found = true;
+		}
+	}
+	if (!found && autofiretable[player].count < MAX_AF_CODES) {
+		autofiretable[player].autofirecodes[autofiretable[player].count++] = code;
+		found = true;
+	}
+	if (found) {
+		autofiretable[player].index[code] = index;
+		autofiretable[player].mask[code] = mask;
+		autofiretable[player].frame_count[code] = 0;
+	}
+	else return;
+}
+
+void inc_autofire_code(int player, uint32_t code, uint32_t mask)
+{
+	int index = get_autofire_code_idx(player, code) + 1;
+	if (index >= num_af_rates || index < 0) index = 0;
+	set_autofire_code(player, code, mask, index);
+}
+
+// autofire related variables
+
+static bool autofire_cfg_parsed = false;
+void parse_autofire_cfg(); // forward declare
+
+static uint32_t autofire_mask[NUMPLAYERS];		// which buttons to toggle this frame iff the matching bit in joy[] is 1 (held)
+
+static int ref_count[NUMPLAYERS][NUMBUTTONS] = {}; // track multiple codes that represent same mask
+static int key_state[NUMPLAYERS][KEY_CNT] = {};
+
+static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int bnum, int dont_save = 0)
+{
+	static char str[512];
 	static uint32_t lastcode[NUMPLAYERS];
-	static uint64_t lastmask[NUMPLAYERS];
+	static uint32_t lastmask[NUMPLAYERS];
 	int num = jnum - 1;
 	if (num < NUMPLAYERS)
 	{
@@ -1872,63 +1944,40 @@ static void joy_digital(int jnum, uint64_t mask, uint32_t code, char press, int 
 			{
 				if (!user_io_osd_is_visible() && press && !cfg.disable_autofire)
 				{
-					if (lastcode[num] && lastmask[num])
+					if ((lastcode[num] && lastmask[num] && (lastmask[num] & 0xF) == 0)) // don't allow enabling autofire on directions
+					//if (lastcode[num] && lastmask[num])
 					{
-						int found = 0;
-						int zero = -1;
-						for (uint i = 0; i < BTN_NUM; i++)
-						{
-							if (!autofirecodes[num][i]) zero = i;
-							if (autofirecodes[num][i] == lastcode[num])
-							{
-								found = 1;
-								autofirecodes[num][i] = 0;
-								break;
+						inc_autofire_code(num, lastcode[num], lastmask[num]);
+						if (hasAPI1_5()) {
+							char *strat = str;
+							uint32_t af_idx = get_autofire_code_idx(num, lastcode[num]);
+							float rate = autofire[af_idx].rate_hz;
+							printf("mask: %u, frame_count: %d, length: %d\n", autofire[af_idx].cycle_mask, autofire[af_idx].frame_count, autofire[af_idx].cycle_length);
+							// PSX buttons have very long names
+							// display this on two lines so nothing gets cropped
+							uint32_t m = lastmask[num];
+							
+							while (m) {
+								int btn = __builtin_ctz(m);  		 // index of lowest set bit
+								strat += sprintf(strat, "%s\n", joy_bnames[btn-4]);
+								m &= (m - 1);  // clear lowest set bit
 							}
-						}
 
-						if (!found && zero >= 0) autofirecodes[num][zero] = lastcode[num];
-						
-						autofire[num] = !found ? autofire[num] | lastmask[num] : autofire[num] & ~lastmask[num];
+							if (rate == 0.0f) {
+									strat += sprintf(strat, "Autofire disabled");
+							} else if (rate == 99.9f) {
+									strat += sprintf(strat, "Autofire: custom");
+							} else {
+									strat += sprintf(strat, "Autofire: %.1fhz", rate);
+							}
 
-						if (hasAPI1_5())
-						{
-							if (!found) sprintf(str, "Auto fire: %dms (%uhz)", af_delay[num] * 2, 1000 / (af_delay[num] * 2));
-							else sprintf(str, "Auto fire: OFF");
 							Info(str);
-						}
-						else InfoMessage((!found) ? "\n\n          Auto fire\n             ON" :
-							"\n\n          Auto fire\n             OFF");
+						} else
+						InfoMessage((!autofire_mask[num])
+							? "\n\n          Autofire\n             ON"
+							: "\n\n          Autofire\n             OFF");
 
-						return;
-					}
-					else if (lastmask[num] & 0xF)
-					{
-						if (lastmask[num] & 9)
-						{
-							af_delay[num] += AF_STEP << ((lastmask[num] & 1) ? 1 : 0);
-							if (af_delay[num] > AF_MAX) af_delay[num] = AF_MAX;
-						}
-						else
-						{
-							af_delay[num] -= AF_STEP << ((lastmask[num] & 2) ? 1 : 0);
-							if (af_delay[num] < AF_MIN) af_delay[num] = AF_MIN;
-						}
-
-						static char str[256];
-
-						if (hasAPI1_5())
-						{
-							sprintf(str, "Auto fire period: %dms (%uhz)", af_delay[num] * 2, 1000 / (af_delay[num] * 2));
-							Info(str);
-						}
-						else
-						{
-							sprintf(str, "\n\n       Auto fire period\n            %dms(%uhz)", af_delay[num] * 2, 1000 / (af_delay[num] * 2));
-							InfoMessage(str);
-						}
-
-						return;
+					return;
 					}
 				}
 			}
@@ -2004,7 +2053,6 @@ static void joy_digital(int jnum, uint64_t mask, uint32_t code, char press, int 
 			ev.value = press;
 
 			int cfg_switch = menu_allow_cfg_switch() && (osdbtn & JOY_BTN2) && press;
-
 			switch (mask)
 			{
 			case JOY_RIGHT:
@@ -2128,16 +2176,28 @@ static void joy_digital(int jnum, uint64_t mask, uint32_t code, char press, int 
 		}
 		else if(jnum)
 		{
-			if (press) joy[num] |= mask;
-			else joy[num] &= ~mask;
-			
-			//user_io_digital_joystick(num, joy[num]);
-
-			if (code)
-			{
-				int found = 0;
-				for (uint i = 0; i < BTN_NUM; i++) if (autofirecodes[num][i] == code) found = 1;
-				if (found) autofire[num] = press ? autofire[num] | mask : autofire[num] & ~mask;
+			// improved overlapping buttons. track reference of all presses and releases.
+			// code represents ev->code of physical button pressed
+			// mask is uint32_t bitmask that came into joy_digital - may contain more
+			// than one button pressed and thus multiple bits set.
+			// when we decompose to address individual bits/buttons:
+			// btn represents which logical button (0-31) in joy[] it maps to
+			// bitmask is a uint32_t bitmask containing just that button
+			uint32_t m = mask;
+			while (m) {
+    			int btn = __builtin_ctz(m);  		 // index of lowest set bit
+    			uint32_t bitmask = 1u << btn;   // mask representing just this button
+				if (press && key_state[num][code] == 0) {
+					key_state[num][code] = 1;
+					ref_count[num][btn]++;
+				}
+				else if (!press && key_state[num][code] == 1) {
+					key_state[num][code] = 0;
+					if (ref_count[num][btn] > 0) ref_count[num][btn]--;
+				}
+				if (ref_count[num][btn]) joy[num] |= bitmask;
+				else joy[num] &= ~bitmask;
+				m &= (m - 1);  // clear lowest set bit
 			}
 		}
 	}
@@ -3301,13 +3361,9 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 					
 					for (uint i = 0; i < BTN_NUM; i++)
 					{
-						uint64_t mask = 0;
-						if (ev->code == (input[dev].map[i] & 0xFFFF)) mask = (uint64_t)1 << i;
-						else if (ev->code == (input[dev].map[i] >> 16)) mask = (uint64_t)1 << (i + 32); // 1 is uint32_t. i spent hours realizing this.
-						if (mask) {
-							if (i <= 3 && origcode == ev->code) origcode = 0; // prevent autofire for original dpad
-							if (ev->value <=1) joy_digital(input[dev].num, mask, origcode, ev->value, i, (ev->code == input[dev].mmap[SYS_BTN_OSD_KTGL + 1] || ev->code == input[dev].mmap[SYS_BTN_OSD_KTGL + 2]));
-							// support 2 simultaneous functions for 1 button if defined in 2 sets. No return.
+						if (ev->code == (input[dev].map[i] & 0xFFFF) || ev->code == (input[dev].map[i] >> 16)) {
+							//if (i <= 3 && origcode == ev->code) origcode = 0; // prevent autofire for original dpad
+							if (ev->value <= 1) joy_digital(input[dev].num, 1 << i, origcode, ev->value, i, (ev->code == input[dev].mmap[SYS_BTN_OSD_KTGL + 1] || ev->code == input[dev].mmap[SYS_BTN_OSD_KTGL + 2]));
 						}
 					}
 
@@ -3359,7 +3415,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 						{
 							if (ev->code == (uint16_t)input[dev].map[i])
 							{
-								if (i <= 3 && origcode == ev->code) origcode = 0; // prevent autofire for original dpad
+								//if (i <= 3 && origcode == ev->code) origcode = 0; // prevent autofire for original dpad
 								if (ev->value <= 1) joy_digital((user_io_get_kbdemu() == EMU_JOY0) ? 1 : 2, 1 << i, origcode, ev->value, i);
 								return;
 							}
@@ -5787,10 +5843,11 @@ int input_test(int getchar)
 int input_poll(int getchar)
 {
 	PROFILE_FUNCTION();
-
-	static int af[NUMPLAYERS] = {};
-	static uint32_t time[NUMPLAYERS] = {};
-	static uint64_t joy_prev[NUMPLAYERS] = {};
+ 	if (!autofire_cfg_parsed) parse_autofire_cfg();
+	static uint32_t joy_prev[NUMPLAYERS] = {};
+	
+	static uint32_t last_frame_count = 0;
+	autofire_timer(); // see autofire.cpp
 
 	int ret = input_test(getchar);
 	if (getchar) return ret;
@@ -5826,41 +5883,63 @@ int input_poll(int getchar)
 
 	if (grabbed)
 	{
-		for (int i = 0; i < NUMPLAYERS; i++)
-		{
-			int send = 0;
-			if (af_delay[i] < AF_MIN) af_delay[i] = AF_MIN;
-
-			/* Autofire handler */
-			if (joy[i] & autofire[i])
+		// the autofire mask is used to toggle whether button presses are sent are not
+		// so we initialize to "on" for all buttons so we don't have to explicitly
+		// set any that don't have autofire.
+		
+		if (FRAME_TICK(last_frame_count)) {
+			
+			// advance all autofire patterns by 1
+			for (int j = 1; j <= num_af_rates; j++)
 			{
-				if (!time[i]) time[i] = GetTimer(af_delay[i]);
-				else if ((joy[i] ^ joy_prev[i]) & autofire[i])
-				{
-					time[i] = GetTimer(af_delay[i]);
-					af[i] = 0;
-				}
-				else if (CheckTimer(time[i]))
-				{
-					time[i] = GetTimer(af_delay[i]);
-					af[i] = !af[i];
-					send = 1;
+				autofire[j].bit = (autofire[j].cycle_mask >> autofire[j].frame_count) & 1u;
+				if (++(autofire[j].frame_count) >= autofire[j].cycle_length)
+					autofire[j].frame_count = 0;
+			}
+			for (int i = 0; i < NUMPLAYERS; i++) {
+			
+			/*
+			new autofire
+			when cfg is parsed we built a bitmask that turns the target rate in hz
+			into a pattern of per-frame on/off for button presses
+			every frame we shift that mask one bit to the right and take the LSB as
+			whether the button should be held or released this frame
+			*/
+			
+			autofire_mask[i] = 0xFFFFFFFF;
+
+			for (int j = 0; j != autofiretable[i].count; j++) {
+				int code = autofiretable[i].autofirecodes[j];
+				if (key_state[i][code] && get_autofire_code_idx(i, code)) {  // does this physical key have autofire enabled?
+						uint8_t rate_idx = autofiretable[i].index[code];
+						printf("rate index: %d\n", rate_idx);
+						uint32_t mask = autofiretable[i].mask[code];
+						while (mask) {
+							int bit_index = __builtin_ctz(mask);   // index of lowest set bit
+							if (ref_count[i][bit_index] == 1) autofire_mask[i] = (autofire_mask[i] & ~(autofire[rate_idx].bit << bit_index));
+							mask &= (mask - 1);
+						}
+					}
 				}
 			}
+		}
 
-			int newdir = ((((uint32_t)(joy[i]) | (uint32_t)(joy[i] >> 32)) & 0xF) != (((uint32_t)(joy_prev[i]) | (uint32_t)(joy_prev[i] >> 32)) & 0xF));
-
-			if (joy[i] != joy_prev[i])
+		for (int i = 0; i < NUMPLAYERS; i++) {
+			bool send = false;
+			int newdir = (joy[i] & 0xF) | (joy_prev[i] & 0xF);
+			uint32_t new_joy = joy[i] & autofire_mask[i];
+			if (new_joy != joy_prev[i])
 			{
-				joy_prev[i] = joy[i];
-				send = 1;
+				joy_prev[i] = new_joy;
+				send = true;
 			}
 
 			if (send)
 			{
-				user_io_digital_joystick(i, af[i] ? joy[i] & ~autofire[i] : joy[i], newdir);
+				user_io_digital_joystick(i, new_joy, newdir);
 			}
 		}
+		
 	}
 
 	if (!grabbed || user_io_osd_is_visible())
@@ -5870,8 +5949,7 @@ int input_poll(int getchar)
 			if(joy[i]) user_io_digital_joystick(i, 0, 1);
 
 			joy[i] = 0;
-			af[i] = 0;
-			autofire[i] = 0;
+			autofire_mask[i] = 0xF;
 		}
 	}
 
@@ -5895,7 +5973,7 @@ int input_poll(int getchar)
 
 int is_key_pressed(int key)
 {
-	unsigned char bits[(KEY_MAX + 7) / 8];
+	unsigned char bits[(KEY_CNT + 7) / 8];
 	for (int i = 0; i < NUMDEV; i++)
 	{
 		if (pool[i].fd > 0)
@@ -6017,4 +6095,103 @@ void parse_buttons()
 		if (!joy_bnames[n][0]) break;
 		joy_bcount++;
 	}
+}
+
+static inline const char *bits_to_str(uint32_t value, int cycle_length) {
+    static char buf[70];   // enough for 64 bits + null
+    int pos = 0;
+
+    for (int i = cycle_length - 1; i >= 0; i--)
+        buf[pos++] = (value & (1ULL << i)) ? '1' : '0';
+
+    buf[pos] = '\0';
+    return buf;
+}
+
+void parse_autofire_cfg() {
+	char *token;
+	int count = 0;
+	char cfg_string[256] = {};
+	
+	autofire[count].rate_hz = 0;
+	autofire[count].cycle_length = 1;
+	autofire[count].cycle_mask = 1;
+	autofire[count].bit = 1;
+	count++;
+
+	snprintf(cfg_string, sizeof(cfg_string), "%s", cfg.autofire_rates);
+
+	token = strtok(cfg_string, ",");
+	while (token && count < MAX_AF_RATES) {
+		// check for binary literal prefix
+		if ((token[0] == '0') && (token[1] == 'b' || token[1] == 'B')) {
+			// parse binary (skip "0b")
+			uint32_t mask = 0;
+			const char *p = token + 2;
+
+			int valid = 1;
+
+			while (*p) {
+				if (*p == '0' || *p == '1') {
+					mask = (mask << 1) | (*p - '0');
+				}
+				else {
+					valid = 0;  // invalid binary char
+					break;
+				}
+				p++;
+			}
+
+			if (valid) {
+				// use binary literal directly
+				autofire[count].rate_hz = 99.9f;
+				autofire[count].cycle_mask = mask;
+				autofire[count].cycle_length = p - (token + 2);
+				count++;
+			}
+
+			token = strtok(NULL, ",");
+			continue;
+		}
+		// pass through to float processing
+		float f = strtof(token, NULL);
+
+		// Reject 0.0 and values > 30.0
+		if (f > 0.0f && f <= 30.0f) {
+			autofire[count++].rate_hz = f;
+		}
+
+		token = strtok(NULL, ",");
+	}
+
+	num_af_rates = count;
+
+	// take the requested rate in hz and generate a bitmask representing the pattern of button
+	// press/release for each frame and the length of the cycle in frames
+	// will choose the rate closest to requested that evenly divides into 60
+	// e.g. 15hz has a bitmask of 0011 and cycle length of 4 frames (hold button for two frames,
+	// release button for two frames)
+
+	for (int i = 1; i != num_af_rates; i++) {
+		if (autofire[i].rate_hz != 99.9f) {
+			autofire[i].bit = 1;
+			autofire[i].cycle_length = (int)lround(60 / autofire[i].rate_hz);
+			autofire[i].rate_hz = 60.0 / autofire[i].cycle_length; // we rounded so update to actual rate
+			int on_frames = autofire[i].cycle_length / 2;
+			for (int j = 0; j != on_frames; j++) {
+				autofire[i].cycle_mask |= (1 << j);
+			}
+		}
+	}
+
+	printf("Number of autofire rates found: %d\n", num_af_rates);
+	for (int i = 1; i != num_af_rates; i++) {
+		if (autofire[i].rate_hz == 99.9f) {
+			printf("user-defined, bitmask %s, cycle length %u\n", bits_to_str(autofire[i].cycle_mask, autofire[i].cycle_length), autofire[i].cycle_length);
+		}
+		else {
+			printf("%.2fhz, bitmask %s, cycle length %u\n", autofire[i].rate_hz, bits_to_str(autofire[i].cycle_mask, autofire[i].cycle_length), autofire[i].cycle_length);
+		}
+	}
+	autofire_cfg_parsed = true;
 }

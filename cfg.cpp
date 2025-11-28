@@ -134,6 +134,7 @@ static const ini_var_t ini_vars[] =
 	{ "MAIN", (void*)(&(cfg.main)), STRING, 0, sizeof(cfg.main) - 1 },
 	{ "VFILTER_INTERLACE_DEFAULT", (void*)(&(cfg.vfilter_interlace_default)), STRING, 0, sizeof(cfg.vfilter_interlace_default) - 1 },
 	{ "AUTOFIRE_RATES", (void *)(&(cfg.autofire_rates)), STRING, 0, sizeof(cfg.autofire_rates) - 1 },
+	{ "SHOW_PROGRESS_INFO", (void *)(&(cfg.show_progress_info)), UINT8, 0, 1 },
 };
 
 static const int nvars = (int)(sizeof(ini_vars) / sizeof(ini_var_t));
@@ -595,6 +596,8 @@ void cfg_parse()
 	strcpy(cfg.main, "MiSTer");
 	has_video_sections = false;
 	using_video_section = false;
+    cfg.disable_autofire=1;
+    cfg.show_progress_info=0;	
 	cfg_error_count = 0;
 	strcpy(cfg.autofire_rates, "10.0, 20.0, 30.0"); // we will parse this string ourselves in input.cpp
 	ini_parse(altcfg(), video_get_core_mode_name(1));

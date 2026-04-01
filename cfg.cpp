@@ -136,7 +136,6 @@ static const ini_var_t ini_vars[] =
 	{ "VFILTER_INTERLACE_DEFAULT", (void*)(&(cfg.vfilter_interlace_default)), STRING, 0, sizeof(cfg.vfilter_interlace_default) - 1 },
 	{ "AUTOFIRE_RATES", (void *)(&(cfg.autofire_rates)), STRING, 0, sizeof(cfg.autofire_rates) - 1 },
 	{ "AUTOFIRE_ON_DIRECTIONS", (void *)(&(cfg.autofire_on_directions)), UINT8, 0, 1 },
-        { "PROGRESS_INFO", (void *)(&(cfg.progress_info)), UINT8, 0, 1 },
 
 };
 
@@ -600,8 +599,6 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
-	cfg.disable_autofire=1;
-        cfg.progress_info=0;
 	strcpy(cfg.autofire_rates, "10,15,30");
 	ini_parse(altcfg(), video_get_core_mode_name(1));
 	if (has_video_sections && !using_video_section)

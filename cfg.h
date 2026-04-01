@@ -106,6 +106,8 @@ typedef struct {
 	uint8_t autofire_on_directions;
 	char screenshot_image_format[16];
 
+    uint8_t progress_info;
+
 } cfg_t;
 
 extern cfg_t cfg;

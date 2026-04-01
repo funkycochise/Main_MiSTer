@@ -7951,6 +7951,6 @@ void ProgressMessage(const char* title, const char* text, int current, int max)
 		for (int i = 0; i <= new_progress; i++) buf[i] = (i < new_progress) ? 0x7F : c;
 		buf[PROGRESS_CNT] = 0;
 
-		if (cfg.progress_info) InfoMessage(progress_buf, 2000, title);
+		InfoMessage(progress_buf, 2000, title);
 	}
 }

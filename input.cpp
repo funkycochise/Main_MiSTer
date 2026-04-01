@@ -34,6 +34,7 @@
 #include "gamecontroller_db.h"
 #include "str_util.h"
 #include "frame_timer.h"
+#include "scaler.h"
 
 #define NUMDEV 30
 #define UINPUT_NAME "MiSTer virtual input"
@@ -1558,7 +1559,7 @@ void finish_map_setting(int dismiss)
 	if (mapping_type == 3)
 	{
 		if (!dismiss) return;
-		if (mapping_count == 3) 
+		if (mapping_count == 3)
 		{
 			input_advanced_clear(mapping_dev);
 			if (mapping_store) memset(mapping_store, 0, sizeof(advancedButtonMap));
@@ -1841,7 +1842,7 @@ static inline float boxradf(const float angle)
 
 static void joy_apply_deadzone(int* x, int* y, const devInput* dev, const int stick) {
 	// Don't be fancy with such a small deadzone.
-	if (dev->deadzone <= 2) 
+	if (dev->deadzone <= 2)
 	{
 		if (dev->deadzone && (abs((*x > *y) == (*x > -*y) ? *x : *y) <= dev->deadzone))
 			*x = *y = 0;
@@ -1901,7 +1902,7 @@ static bool handle_autofire_toggle(int num, uint32_t mask, uint32_t code, char p
 			{
 				if (lastcode[num] == code) { // build up mask if multiple buttons map to same code
 					lastmask[num] |= mask; 	 // this can't happen at present but if it ever does it will work correctly
-											
+
 				} else {
 					lastcode[num] = code;
 					lastmask[num] = mask;
@@ -1926,7 +1927,7 @@ static bool handle_autofire_toggle(int num, uint32_t mask, uint32_t code, char p
 		{
 			char *strat = str;
 			inc_autofire_code(num, lastcode[num], lastmask[num]);
-			
+
 			// display autofire status for each button in the mask
 			FOR_EACH_SET_BIT(lastmask[num], btn) {
 				if (btn < 4) {
@@ -2132,7 +2133,7 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int 
 			ev.value = press;
 
 			int cfg_switch = menu_allow_cfg_switch() && (osdbtn & JOY_BTN2) && press;
-			
+
 			switch (mask)
 			{
 			case JOY_RIGHT:
@@ -2263,7 +2264,7 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int 
 static bool joy_dir_is_diagonal(const int x, const int y)
 {
 	static const float JOY_DIAG_THRESHOLD = .85f;
-	
+
 	return
 		((x == 0) || (y == 0)) ? false :
 		((x == y) || (x == -y)) ? true :
@@ -2903,7 +2904,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 
 
 	//mapping
-	
+
 	if (mapping && mapping_type == 3 && ev->type == EV_KEY)
 	{
 		bool jkm_can_intr = mapping_count == 3 && mapping_button <= 1 && mapping_set == 1;
@@ -2918,7 +2919,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 
 		if (ev->value == 1)
 		{
-			uint16_t *code_store = mapping_set ==  1 ? mapping_store->input_codes : mapping_store->output_codes; 
+			uint16_t *code_store = mapping_set ==  1 ? mapping_store->input_codes : mapping_store->output_codes;
 			code_store[mapping_button++] = ev->code;
 			mapping_current_dev = mapping_dev;
 			if (mapping_button == sizeof(mapping_store->input_codes)/sizeof(mapping_store->input_codes[0])) //Don't overflow, just keep replacing the last entry
@@ -3426,7 +3427,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 						if (input[dev].has_map == 3) Info("This joystick is not defined");
 						input[dev].has_map = 1;
 					}
-					
+
 					for (uint i = 0; i < BTN_NUM; i++)
 					{
 						if (ev->code == (input[dev].map[i] & 0xFFFF) || ev->code == (input[dev].map[i] >> 16)) {
@@ -4790,6 +4791,7 @@ static void setup_wheels()
 
 int input_test(int getchar)
 {
+	PROFILE_FUNCTION();
 	static char cur_leds = 0;
 	static int state = 0;
 	struct input_absinfo absinfo;
@@ -5110,21 +5112,21 @@ int input_test(int getchar)
 							input_lightgun_load(n);
 						}
 
-						//Sinden Lightgun (two different PIDs, four different PIDs depending on gun color/config)                                                                                                   
-						if ((input[n].vid == 0x16c0 || input[n].vid == 0x16d0) && (                             
-            					input[n].pid == 0x0f01 ||                             
-            					input[n].pid == 0x0f02 ||                             
-            					input[n].pid == 0x0f38 ||                             
-            					input[n].pid == 0x0f39))                             
-						{                             
-    							input[n].quirk = QUIRK_LIGHTGUN;                             
-    							input[n].lightgun = 1;                             
-    							input[n].guncal[0] = 0;                             
-    							input[n].guncal[1] = 65535;                             
-    							input[n].guncal[2] = 0;                             
-    							input[n].guncal[3] = 65535;                             
-    							input_lightgun_load(n);                             
-						} 
+						//Sinden Lightgun (two different PIDs, four different PIDs depending on gun color/config)
+						if ((input[n].vid == 0x16c0 || input[n].vid == 0x16d0) && (
+            					input[n].pid == 0x0f01 ||
+            					input[n].pid == 0x0f02 ||
+            					input[n].pid == 0x0f38 ||
+            					input[n].pid == 0x0f39))
+						{
+    							input[n].quirk = QUIRK_LIGHTGUN;
+    							input[n].lightgun = 1;
+    							input[n].guncal[0] = 0;
+    							input[n].guncal[1] = 65535;
+    							input[n].guncal[2] = 0;
+    							input[n].guncal[3] = 65535;
+    							input_lightgun_load(n);
+						}
 
 						//Madcatz Arcade Stick 360
 						if (input[n].vid == 0x0738 && input[n].pid == 0x4758) input[n].quirk = QUIRK_MADCATZ360;
@@ -5252,7 +5254,7 @@ int input_test(int getchar)
 
 		while (1)
 		{
-			
+
 			if (cfg.rumble && !is_menu())
 			{
 				for (int i = 0; i < NUMDEV; i++)
@@ -5877,7 +5879,21 @@ int input_test(int getchar)
 					}
 					else if (!strncmp(cmd, "screenshot", 10))
 					{
-						user_io_screenshot_cmd(cmd);
+						char *p = cmd + 10;
+						int scaled = 0;
+
+						while (*p == ' ' || *p == '\t')
+							p++;
+
+						if (!strncmp(p, "scaled", 6) && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t'))
+						{
+							scaled = 1;
+							p += 6;
+
+							while (*p == ' ' || *p == '\t')
+								p++;
+						}
+						request_screenshot(p, scaled);
 					}
 					else if (!strncmp(cmd, "volume ", 7))
 					{
@@ -5927,7 +5943,7 @@ int input_test(int getchar)
 	return 0;
 }
 
-void key_update_frames_held()
+void key_update_frames_held_cb(void)
 {
 	for (int i = 0; i < NUMPLAYERS; i++) {
 		for (int k = 0; k < key_states[i].count; k++) {
@@ -5942,18 +5958,16 @@ void key_update_frames_held()
 
 int input_poll(int getchar)
 {
+	#ifdef PROFILING
+		PROFILE_FUNCTION();
+	#endif
 
-	static int poll_cnt = 0;
-	PROFILE_FUNCTION();
 	static bool autofire_cfg_parsed = false;
  	if (!autofire_cfg_parsed) autofire_cfg_parsed = parse_autofire_cfg();
 	static uint32_t joy_mask_prev[NUMPLAYERS] = {};
-	
-	// FRAME_TICK compares against frame_timer's counter (updated elsewhere) and fires once per frame.
-	static uint32_t last_frame_count = 0;
-	if (FRAME_TICK(last_frame_count)) {
-		key_update_frames_held();
-	}
+
+	add_frame_callback(key_update_frames_held_cb);
+
 
 	int ret = input_test(getchar);
 	if (getchar) return ret;
@@ -6175,7 +6189,7 @@ static void advanced_convert_jkmap(int devnum)
 		  if (jkmap[i])
 		  {
 			  advancedButtonMap *abm = &input[devnum].advanced_map[abmidx++];
-		    memset(abm, 0, sizeof(advancedButtonMap));	
+		    memset(abm, 0, sizeof(advancedButtonMap));
 			  abm->input_codes[0] = i;
 			  abm->output_codes[0] = jkmap[i];
 		  }
@@ -6218,7 +6232,7 @@ static uint32_t process_abm_entry(advancedButtonMap *abm, advancedButtonState *a
 				input_cb(&ev, NULL, devnum, true);
 				input[devnum].advanced_last_pressed_keycode = abs->pressed ? ocode : 0;
 			} else {
-				retmask |= omask; 
+				retmask |= omask;
 			}
 		}
 	}
@@ -6246,7 +6260,7 @@ uint8_t advanced_entry_pressed_state(advancedButtonMap *abm, advancedButtonState
 				abs->input_state &= ~(1<<i);
 		}
 		code_cnt++;
-		if (abs->input_state & 1<<i) pressed_cnt++; 
+		if (abs->input_state & 1<<i) pressed_cnt++;
 		if (abm->input_codes[i] == input[devnum].mmap[SYS_BTN_OSD_KTGL+1] || abm->input_codes[i] == input[devnum].mmap[SYS_BTN_OSD_KTGL+2])
 			chord_has_osd = true;
 	}
@@ -6255,7 +6269,7 @@ uint8_t advanced_entry_pressed_state(advancedButtonMap *abm, advancedButtonState
 		is_pressed = false;
 
 	//if a chord contains the OSD button(s) they have to be first, otherwise it might
-	//interfere with autofire chording. 
+	//interfere with autofire chording.
 	if (code_is_osd_btn && evstate && chord_has_osd && pressed_cnt > 1)
 		is_pressed = false;
 
@@ -6272,7 +6286,7 @@ bool update_advanced_state(int devnum, uint16_t evcode, int evstate)
 	{
 		struct input_event ev;
 		ev.code = input[devnum].advanced_last_pressed_keycode;
-		ev.value = evstate; 
+		ev.value = evstate;
 		ev.type = EV_KEY;
 		input_cb(&ev, NULL, devnum, true);
 		return false;
@@ -6295,7 +6309,7 @@ bool update_advanced_state(int devnum, uint16_t evcode, int evstate)
 
 		uint8_t pressed_state  = advanced_entry_pressed_state(abm, abs, evcode, evstate, devnum);
 		bool is_pressed = pressed_state & 1;
-		bool chord_has_osd = pressed_state & (1 << 1); 
+		bool chord_has_osd = pressed_state & (1 << 1);
 		abs->last_pressed = abs->pressed;
 		abs->pressed = is_pressed;
 
@@ -6315,11 +6329,11 @@ bool update_advanced_state(int devnum, uint16_t evcode, int evstate)
 				if (!imask && icode <= 256) //Keyboard
 				{
 
-					if (icode != evcode) 
+					if (icode != evcode)
 					{
 						struct input_event ev;
-						ev.code = icode; 
-						ev.value = !abs->pressed; 
+						ev.code = icode;
+						ev.value = !abs->pressed;
 						ev.type = EV_KEY;
 						input_cb(&ev, NULL, devnum, true);
 					}
@@ -6344,7 +6358,7 @@ bool update_advanced_state(int devnum, uint16_t evcode, int evstate)
 		}
 	}
 
-	//If this return is true input_cb inhibits sending the keyboard event to the core. 
+	//If this return is true input_cb inhibits sending the keyboard event to the core.
 	//Needed so the core doesn't see a keyboard event for the last key in a chord
 	//(or when a single key has been remapped)
 	return allow_keysend;
@@ -6357,7 +6371,7 @@ advancedButtonMap *get_advanced_map_defs(int devnum)
 		return NULL;
 	}
 	devnum = input[devnum].bind;
-	return input[devnum].advanced_map; 
+	return input[devnum].advanced_map;
 }
 
 void get_button_name_for_code(uint16_t btn_code, int devnum, char *bname, size_t bname_sz)
@@ -6435,7 +6449,7 @@ void input_advanced_save(int dev_num, bool do_delete)
 		if (do_delete)
 			FileDeleteConfig(path);
 		else
-			FileSaveConfig(path, input[dev_num].advanced_map, bufsize); 
+			FileSaveConfig(path, input[dev_num].advanced_map, bufsize);
 	}
 }
 
@@ -6447,13 +6461,13 @@ void input_advanced_load(int dev_num)
 	if (buf)
 	{
 		dev_num = input[dev_num].bind;
-		memset(buf, 0, bufsize); 
+		memset(buf, 0, bufsize);
 		char fname[256] = {};
-		input_advanced_save_filename(fname, sizeof(fname), dev_num, false); 
+		input_advanced_save_filename(fname, sizeof(fname), dev_num, false);
 		strncat(path, fname, sizeof(path)-1);
 		if (FileLoadConfig(path, buf, bufsize))
 		{
-			memcpy(input[dev_num].advanced_map, buf, bufsize); 
+			memcpy(input[dev_num].advanced_map, buf, bufsize);
 			for(int i = 0; i < ADVANCED_MAP_MAX; i++)
 			{
 				advancedButtonMap *abm = &input[dev_num].advanced_map[i];
@@ -6479,7 +6493,7 @@ advancedButtonMap *input_advanced_find_match(advancedButtonMap *newMap, int devn
 		for(size_t j = 0; j < 4; j++)
 		{
 
-      uint16_t scode = newMap->input_codes[j];	
+      uint16_t scode = newMap->input_codes[j];
 			if (scode != 0) jcnt++;
 			kcnt = 0;
 			for(size_t k = 0; k < 4; k++)
@@ -6504,14 +6518,14 @@ void input_advanced_clear(int devnum)
 void input_advanced_delete(advancedButtonMap *todel, int devnum)
 {
 	if (devnum <0 || devnum >= NUMDEV) return;
-	if (todel < input[devnum].advanced_map || todel > &input[devnum].advanced_map[ADVANCED_MAP_MAX-1]) 
+	if (todel < input[devnum].advanced_map || todel > &input[devnum].advanced_map[ADVANCED_MAP_MAX-1])
 	{
 		memset(todel, 0, sizeof(advancedButtonMap));
 		return;
 	}
 
 	//endptr is not a valid ABM, but it is a pointer to just after the last one
-	//only used for address calculation in memmove. 
+	//only used for address calculation in memmove.
 	advancedButtonMap *endptr = &input[devnum].advanced_map[ADVANCED_MAP_MAX];
 	memmove(todel, todel+1, (sizeof(advancedButtonMap)*(endptr-(todel+1))));
 	input_advanced_save(devnum);

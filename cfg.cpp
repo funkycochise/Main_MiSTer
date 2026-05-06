@@ -35,6 +35,7 @@ typedef struct
 
 static const ini_var_t ini_vars[] =
 {
+    { "PROGRESS_INFO", (void *)(&(cfg.progress_info)), UINT8, 0, 1 },
 	{ "YPBPR", (void*)(&(cfg.vga_mode_int)), UINT8, 0, 1 },
 	{ "COMPOSITE_SYNC", (void*)(&(cfg.csync)), UINT8, 0, 1 },
 	{ "FORCED_SCANDOUBLER", (void*)(&(cfg.forced_scandoubler)), UINT8, 0, 1 },
@@ -578,6 +579,8 @@ const char* cfg_get_label(uint8_t alt)
 void cfg_parse()
 {
 	memset(&cfg, 0, sizeof(cfg));
+	cfg.disable_autofire=1;
+    cfg.progress_info=0;		
 	cfg.csync = 1;
 	cfg.bootscreen = 1;
 	cfg.fb_terminal = 1;

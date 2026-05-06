@@ -9,6 +9,7 @@
 
 //// type definitions ////
 typedef struct {
+	uint8_t progress_info;
 	uint32_t keyrah_mode;
 	uint8_t forced_scandoubler;
 	uint8_t key_menu_as_rgui;

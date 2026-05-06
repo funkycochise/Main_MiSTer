@@ -28,6 +28,7 @@
 #include "scaler.h"
 #include "miniz.h"
 #include "cheats.h"
+#include "game_docs.h"
 #include "video.h"
 #include "audio.h"
 #include "shmem.h"
@@ -956,10 +957,12 @@ static void parse_config()
 					else if (is_megacd())
 					{
 						mcd_set_image(idx, str);
+						game_docs_init(str, 0);
 					}
 					else if (is_pce())
 					{
 						pcecd_set_image(idx, str);
+						game_docs_init(str, 0);
 						cheats_init(str, 0);
 					}
 					else
@@ -1134,6 +1137,7 @@ int GetUARTMode()
 	if (!stat("/tmp/uartmode3", &filestat)) return 3;
 	if (!stat("/tmp/uartmode4", &filestat)) return 4;
 	if (!stat("/tmp/uartmode5", &filestat)) return 5;
+	if (!stat("/tmp/uartmode6", &filestat)) return 6;
 	return 0;
 }
 
@@ -1594,7 +1598,8 @@ void user_io_init(const char *path, const char *xml)
 							}
 						}
 
-						// cheats for boot file
+						// cheats & game docs for boot file
+						game_docs_init("", user_io_get_file_crc());
 						if (user_io_use_cheats()) cheats_init("", user_io_get_file_crc());
 					}
 
@@ -2658,6 +2663,7 @@ int user_io_file_tx(const char* name, unsigned char index, char opensave, char m
 	user_io_set_download(1, load_addr ? bytes2send : 0);
 
 	int dosend = 1;
+	file_crc = 0;
 
 	int snes_file = SNES_FILE_RAW;
 	if (is_snes() && bytes2send && !load_addr)
@@ -2731,16 +2737,28 @@ int user_io_file_tx(const char* name, unsigned char index, char opensave, char m
 			hexdump(buf, 16, 0);
 			user_io_file_tx_data(buf, 512);
 
-			//strip original SNES ROM header if present (not used)
-			if ((bytes2send % 1024) == 512)
-			{
-				bytes2send -= 512;
-				FileReadSec(&f, buf);
+			uint32_t rom_size = 0;
+			uint8_t *rom = snes_get_mirrored_rom(&f, &rom_size);
+			if (rom) {
+				uint32_t orig_size = (f.size & 512) ? f.size - 512 : f.size;
+				file_crc = crc32(0, rom, orig_size);
+
+				uint32_t remaining = rom_size;
+				uint32_t sent = 0;
+				const uint32_t chunk_size = 4096;
+				while (remaining) {
+					uint32_t chunk = (remaining > chunk_size) ? chunk_size : remaining;
+					ProgressMessage("Loading", f.name, sent, rom_size);
+					user_io_file_tx_data(rom + sent, chunk);
+					sent += chunk;
+					remaining -= chunk;
+				}
+				free(rom);
 			}
+			dosend = 0;
 		}
 	}
 
-	file_crc = 0;
 	uint32_t skip = bytes2send & 0x3FF; // skip possible header up to 1023 bytes
 
 	int use_progress = 1; // (bytes2send > (1024 * 1024)) ? 1 : 0;

@@ -138,8 +138,6 @@ static const ini_var_t ini_vars[] =
 	{ "AUTOFIRE_ON_DIRECTIONS", (void *)(&(cfg.autofire_on_directions)), UINT8, 0, 1 },
 	{ "SCREENSHOT_IMAGE_FORMAT", (void *)(&(cfg.screenshot_image_format)), STRING, 0, sizeof(cfg.screenshot_image_format) - 1 },
 
-    { "PROGRESS_INFO", (void *)(&(cfg.progress_info)), UINT8, 0, 1 },
-
 };
 
 static const int nvars = (int)(sizeof(ini_vars) / sizeof(ini_var_t));
@@ -602,9 +600,6 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
-
-	cfg.disable_autofire=1;
-    cfg.progress_info=0;	
 	
 	strcpy(cfg.autofire_rates, "10,15,30");
 	strcpy(cfg.screenshot_image_format, "png");

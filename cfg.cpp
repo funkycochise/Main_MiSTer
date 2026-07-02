@@ -36,6 +36,7 @@ typedef struct
 
 static const ini_var_t ini_vars[] =
 {
+    { "PROGRESS_INFO", (void *)(&(cfg.progress_info)), UINT8, 0, 1 },
 	{ "YPBPR", (void*)(&(cfg.vga_mode_int)), UINT8, 0, 1 },
 	{ "COMPOSITE_SYNC", (void*)(&(cfg.csync)), UINT8, 0, 1 },
 	{ "FORCED_SCANDOUBLER", (void*)(&(cfg.forced_scandoubler)), UINT8, 0, 1 },
@@ -518,6 +519,7 @@ static constexpr int CFG_ERRORS_STRLEN = 128;
 static char cfg_errors[CFG_ERRORS_MAX][CFG_ERRORS_STRLEN];
 static int cfg_error_count = 0;
 
+
 const char* cfg_get_name(uint8_t alt)
 {
 	static int done = 0;
@@ -613,6 +615,8 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
+	cfg.disable_autofire=1;
+    cfg.progress_info=0;
 	strcpy(cfg.autofire_rates, "10,15,30");
 	strcpy(cfg.screenshot_image_format, "png");
 

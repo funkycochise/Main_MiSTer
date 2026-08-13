@@ -57,6 +57,9 @@ static void akiko_diag(const char *fmt, ...);
 
 #define AKIKO_SECTOR_BYTES 2352
 
+#define AKIKO_FILL_CHUNK_WORDS 64
+#define AKIKO_FILL_GAP_US      10
+
 static const int command_lengths[16] = {
 	1, 2, 1, 1, 12, 2, 1, 1, 4, 1, 2, -1, -1, -1, -1, -1
 };
@@ -196,23 +199,10 @@ static inline uint8_t bin_to_bcd(uint8_t v)
 
 static inline bool cd32_active(void)
 {
-	return (minimig_config.cpu & 0x03) == 3
-	    && ((minimig_config.chipset >> 2) & 7) == 6
-	    && (minimig_config.cd32_drive.cfg);
+	return (minimig_config.cd32_drive.cfg != 0);
 }
 
-static drive_t *cd_find_drive(void)
-{
-	if (cd32_drive.cd && (cd32_drive.chd_f || cd32_drive.f)) return &cd32_drive;
-
-	for (int p = 0; p < 2; p++) {
-		for (int d = 0; d < 2; d++) {
-			drive_t *drv = &ide_inst[p].drive[d];
-			if (drv->cd && (drv->chd_f || drv->f)) return drv;
-		}
-	}
-	return NULL;
-}
+#define cd_find_drive() minimig_cd_drive_get(0)
 
 static bool cd_is_mounted(void)
 {
@@ -709,11 +699,19 @@ static void akiko_ext_block_write(uint16_t addr, const uint8_t *buf, int bytes)
 	static uint16_t words[AKIKO_SECTOR_BYTES / 2];
 	memcpy(words, buf, bytes);
 
+	int total = bytes / 2;
+
 	EnableIO();
 	fpga_spi_fast(UIO_DMA_WRITE);
 	fpga_spi_fast(addr);
 	fpga_spi_fast(0);
-	fpga_spi_fast_block_write(words, bytes / 2);
+	int off = 0;
+	while (off < total) {
+		int n = total - off < AKIKO_FILL_CHUNK_WORDS ? total - off : AKIKO_FILL_CHUNK_WORDS;
+		fpga_spi_fast_block_write(words + off, n);
+		off += n;
+		if (off < total) usleep(AKIKO_FILL_GAP_US);
+	}
 	DisableIO();
 }
 

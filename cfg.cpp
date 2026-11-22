@@ -638,6 +638,8 @@ void cfg_parse()
 	has_video_sections = false;
 	using_video_section = false;
 	cfg_error_count = 0;
+    cfg.disable_autofire=1;
+    cfg.progress_info=0;
 	strcpy(cfg.autofire_rates, "10,15,30");
 	strcpy(cfg.screenshot_image_format, "png");
 	cfg.screenshot_info = 1;
